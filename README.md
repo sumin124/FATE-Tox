@@ -17,7 +17,7 @@ conda env create -f environment.yaml
 ```
 
 # Usage
-- `mol_stage1.py`: Constructing atom-level and fragment-level graphs given a SMILES string of a molecule. 
+- `dataset_construction_2d.py`: Constructing atom-level and fragment-level graphs given a SMILES string of a molecule. 
   **Dataset Construction from _data_df_ (dataframe of SMILES-target toxicity label)
   ```
   train_dataset = MultiFragDataset_w_fp(data_df, args.smiles_col, args.target_col, 'train', args.coor_normalize, args)
