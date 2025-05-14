@@ -27,12 +27,7 @@ def make_model(N=2, d_model=128, h=8, dropout=0.1,
 
     model = GraphTransformer(
         Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout, scale_norm, use_adapter), N, scale_norm))
-        # EncoderLayer N개 만큼씩 반복해서 node attribute update (한번 나올때 ScaleNorm까지)
-        # Embeddings(d_model, d_atom, dropout),
-        # Generator(d_model, aggregation_type, n_output, n_generator_layers, leaky_relu_slope, dropout, scale_norm))
-    
-    # This was important from their code. 
-    # Initialize parameters with Glorot / fan_avg.
+
     for p in model.parameters():
         if p.dim() > 1:
             if init_type == 'uniform':
@@ -50,8 +45,6 @@ class GraphTransformer(nn.Module):
     def __init__(self, encoder):#, generator):
         super(GraphTransformer, self).__init__()
         self.encoder = encoder
-        # self.src_embed = src_embed
-        # self.generator = generator
         
     def forward(self, src, src_mask, adj_matrix, distances_matrix, edges_att):
         "Take in and process masked src and target sequences."
@@ -59,10 +52,6 @@ class GraphTransformer(nn.Module):
     
     def encode(self, src, src_mask, adj_matrix, distances_matrix, edges_att):
         return self.encoder(src, src_mask, adj_matrix, distances_matrix, edges_att)
-        # return self.encoder(self.src_embed(src), src_mask, adj_matrix, distances_matrix, edges_att)
-    
-    # def predict(self, out, out_mask):
-    #     return self.generator(out, out_mask)
     
     
 class Generator(nn.Module):
