@@ -25,7 +25,6 @@ IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 DoubleTensor = torch.cuda.DoubleTensor if use_cuda else torch.DoubleTensor
 
 
-#240229_sm_change conformer to MMFF Optimization
 def load_data_from_smiles(x_smiles, labels, add_dummy_node=True, one_hot_formal_charge=False):
     """Load and featurize data from lists of SMILES strings and labels.
 
@@ -50,9 +49,6 @@ def load_data_from_smiles(x_smiles, labels, add_dummy_node=True, one_hot_formal_
             AllChem.EmbedMolecule(mol, maxAttempts=5000)
             AllChem.MMFFOptimizeMolecule(mol, maxIters=400)
             mol = Chem.RemoveHs(mol)
-#        except:
-#            AllChem.Compute2DCoords(mol)
-
             afm, adj, edge_attr, dist, com = featurize_mol(mol, add_dummy_node, one_hot_formal_charge)
             x_all.append([afm, adj, dist, com])
             y_all.append([label])
@@ -116,35 +112,13 @@ def featurize_mol(mol, pos, add_dummy_node, one_hot_formal_charge):
                               for atom in mol.GetAtoms()])
 
     adj_matrix = np.eye(mol.GetNumAtoms())
-    edge_attr = []
-    i = 0
-#    print(f'check bond number: {len(mol.GetBonds())}')
     for bond in mol.GetBonds():
         begin_atom = bond.GetBeginAtom().GetIdx()
         end_atom = bond.GetEndAtom().GetIdx()
         adj_matrix[begin_atom, end_atom] = adj_matrix[end_atom, begin_atom] = 1
-        e = []
-        e.append(e_map['bond_type'].index(str(bond.GetBondType())))
-        e.append(e_map['stereo'].index(str(bond.GetStereo())))
-        e.append(e_map['is_conjugated'].index(bond.GetIsConjugated()))
-        edge_attr.append(e)
-        i+=1
- #   print(f'check: attribute length: {len(edge_attr)}, {i}')
     
     ##compute distance matrix with 2d information
     rdDepictor.Compute2DCoords(mol)
-
-    # positions, weights = [], []
-
-    # for atom in mol.GetAtoms():
-    #     pos = mol.GetConformer().GetAtomPosition(atom.GetIdx())
-    #     positions.append([pos.x, pos.y])
-    #     weights.append(atom.GetMass())
-
-    # dist_matrix = pairwise_distances(np.array(positions))
-
-    # center_of_mass_2d = np.average(positions_array, axis=0, weights=np.array(weights))
-
 
     positions = []
     ptable = Chem.GetPeriodicTable()
@@ -181,7 +155,7 @@ def featurize_mol(mol, pos, add_dummy_node, one_hot_formal_charge):
         dist_matrix = m
 
     return torch.tensor(node_features, dtype=torch.float32), torch.tensor(adj_matrix, dtype=torch.int64), \
-              torch.tensor(edge_attr, dtype=torch.int64), torch.tensor(dist_matrix, dtype=torch.float32), \
+              torch.tensor(dist_matrix, dtype=torch.float32), \
               torch.tensor(center_of_mass, dtype=torch.float32), torch.tensor(np.array(positions), dtype=torch.float32)
 
 
@@ -248,16 +222,11 @@ def smi_to_graph_data(smi, pos):
     num_atoms = mol.GetNumAtoms()
     if num_atoms != pos.shape[0]:
         return None
-        # mol = Chem.AddHs(mol)
-        # print(pos, pos.shape, num_atoms, smi)
     else: 
         num_bonds = mol.GetNumBonds()
 
-        afm, adj, edge_attr, dist, com, pos_2d = featurize_mol(mol, pos, add_dummy_node=False, one_hot_formal_charge=True)
-        # pos = mol.GetConformer().GetPositions()
-        # pos = torch.tensor(pos, dtype=torch.float32)
-        # #print(f'edge_attr: {edge_attr.shape} \nadj: {adj.shape}')
-
+        afm, adj, dist, com, pos_2d = featurize_mol(mol, pos, add_dummy_node=False, one_hot_formal_charge=True)
+        
         element = []
         for atom_idx in range(num_atoms):
             atom = mol.GetAtomWithIdx(atom_idx)
@@ -265,51 +234,11 @@ def smi_to_graph_data(smi, pos):
             element.append(atomic_number)
         element = torch.tensor(element, dtype=torch.int64)
         
-        atom_data['afm'], atom_data['adj'], atom_data['edge_attr'], atom_data['dist'], atom_data['com'], atom_data['pos'], atom_data['element'], atom_data['pos_2d'] = afm, adj, edge_attr, dist, com, pos, element, pos_2d
+        atom_data['afm'], atom_data['adj'], atom_data['dist'], atom_data['com'], atom_data['pos'], atom_data['element'], atom_data['pos_2d'] = afm, adj, dist, com, pos, element, pos_2d
         
         return atom_data
 
-def docked_mol_to_graph_data(mol):
 
-    atom_data = defaultdict(list)
-
-    num_atoms = mol.GetNumAtoms()
-    pos = torch.tensor(mol.GetConformer().GetPositions())
-    afm, adj, edge_attr, dist, com = featurize_mol(mol, pos, add_dummy_node=False, one_hot_formal_charge=True)
-        # pos = mol.GetConformer().GetPositions()
-        # pos = torch.tensor(pos, dtype=torch.float32)
-        # #print(f'edge_attr: {edge_attr.shape} \nadj: {adj.shape}')
-
-    element = []
-    for atom_idx in range(num_atoms):
-        atom = mol.GetAtomWithIdx(atom_idx)
-        atomic_number = atom.GetAtomicNum()
-        element.append(atomic_number)
-    element = torch.tensor(element, dtype=torch.int64)
-    
-    atom_data['afm'], atom_data['adj'], atom_data['edge_attr'], atom_data['dist'], atom_data['com'], atom_data['pos'], atom_data['element'] = afm, adj, edge_attr, dist, com, pos, element
-    
-    return atom_data
-
-
-
-#######Frag-BHGNN#######
-
-def get_value_to_one_hot(value_list, value):
-    one_hot_vector = [0] * len(value_list)
-    idx = value_list.index(value)
-    one_hot_vector[idx] = 1
-    return one_hot_vector
-
-def get_value_list(values):
-    return list(values.values())
-
-### substitute get_mol_to_graph_data(mol) -> above code (+ from_smiles?)
-
-
-'''
-Fragmentation methods
-'''
 def get_mol_fragment_sets_brics(mol):
     num_atoms = mol.GetNumAtoms()
     mol_fragments = BRICS.BreakBRICSBonds(mol)
@@ -491,56 +420,13 @@ def get_mol_fragment_sets_fg(mol):
         return mol_fragments, mol_fragment_sets, frag_bond_list
     
 
-def get_mol_fragment_sets_merged(mol):
-    num_atoms = mol.GetNumAtoms()
-    _, _, brics_bond_list = get_mol_fragment_sets_brics(mol)
-    _, _, murcko_bond_list = get_mol_fragment_sets_murcko(mol)
-    _, _, fg_bond_list = get_mol_fragment_sets_fg(mol)
-    
-    brics_bond_list = [tuple(sorted(bond)) for bond in brics_bond_list]
-    murcko_bond_list = [tuple(sorted(bond)) for bond in murcko_bond_list]
-    fg_bond_list = [tuple(sorted(bond)) for bond in fg_bond_list]
-    
-    merged_bond_list = list(set(brics_bond_list + murcko_bond_list + fg_bond_list))
-    
-    if len(merged_bond_list) == 0:
-        # print(f'smiles: {Chem.MolToSmiles(mol)} has no fragments')
-        mol_fragments = [mol]
-        mol_fragment_sets = [tuple(range(mol.GetNumAtoms()))]
-        frag_bond_list = []
-        return mol_fragments, mol_fragment_sets, frag_bond_list
-    else:
-        frag_bond_idx_list = []
-        for bond in mol.GetBonds():
-            bond_idx = bond.GetIdx()
-            begin_atom_idx = bond.GetBeginAtomIdx()
-            end_atom_idx = bond.GetEndAtomIdx()
-            if (begin_atom_idx, end_atom_idx) in merged_bond_list or (end_atom_idx, begin_atom_idx) in merged_bond_list:
-                frag_bond_idx_list.append(bond_idx)
-        mol_fragments = Chem.FragmentOnBonds(mol, frag_bond_idx_list)
-        mol_fragment_sets = []
-        mol_fragments = Chem.GetMolFrags(mol_fragments, asMols=True, sanitizeFrags=True, fragsMolAtomMapping=mol_fragment_sets)
-        new_mol_fragment_sets = []
-        for mol_fragment_set in mol_fragment_sets:
-            mol_fragment_set = [atom_idx for atom_idx in mol_fragment_set if atom_idx < num_atoms]
-            new_mol_fragment_sets.append(mol_fragment_set)
-        return mol_fragments, new_mol_fragment_sets, merged_bond_list
-
 def get_mol_fragment_sets(mol, fragmentation_method):
     if fragmentation_method == 'brics':
-        mol_fragments, mol_fragment_sets, frag_bond_list = get_mol_fragment_sets_brics(mol)
+        return get_mol_fragment_sets_brics(mol)
     elif fragmentation_method == 'murcko':
-        mol_fragments, mol_fragment_sets, frag_bond_list = get_mol_fragment_sets_murcko(mol)
+        return get_mol_fragment_sets_murcko(mol)
     elif fragmentation_method == 'fg':
-        mol_fragments, mol_fragment_sets, frag_bond_list = get_mol_fragment_sets_fg(mol)
-    elif fragmentation_method == 'merged':
-        mol_fragments, mol_fragment_sets, frag_bond_list = get_mol_fragment_sets_merged(mol)
-    return mol_fragments, mol_fragment_sets, frag_bond_list
-
-
-def get_hyper_node_feature_mean(data, mol_fragment_set):
-    hyper_node_feature = np.array(data.x)[mol_fragment_set].sum(axis=0) / len(mol_fragment_set)
-    return hyper_node_feature.tolist()
+        return get_mol_fragment_sets_fg(mol)
 
 def get_hyper_node_feature_sum(data, mol_fragment_set):
     hyper_node_feature = np.array(data.x)[mol_fragment_set].sum(axis=0)
@@ -559,21 +445,21 @@ def get_frag_edges(mol_fragment_sets, frag_bond_list):
         frag_edges.append(tuple(frag_edge[::-1]))
     return frag_edges
 
+
 def fragment_pos(data, mol_fragment_set):
     ptable = Chem.GetPeriodicTable()
     fragment_pos = np.array(data.pos)[mol_fragment_set]
     fragment_pos_2d = np.array(data.pos_2d)[mol_fragment_set]
-    #print(f'fragment pos: {fragment_pos}')
+
     fragment_atom_weight = [ptable.GetAtomicWeight(int(atomic_number)) for atomic_number in np.array(data.element)[mol_fragment_set]]
     fragment_atom_weight = np.array(fragment_atom_weight).reshape(-1,1)
-    #print(f'fragment atom weight: {fragment_atom_weight}')
+    
     frag_sum_weight = np.sum(fragment_atom_weight)
     fragment_center_of_mass = np.sum(fragment_pos * fragment_atom_weight, axis=0) / frag_sum_weight
     fragment_center_of_mass_2d = np.sum(fragment_pos_2d * fragment_atom_weight, axis=0) / frag_sum_weight
-    #print(f'fragment center of mass: {fragment_center_of_mass}')
-    #fragment_pos = np.array(data.pos)[mol_fragment_set].sum(axis=0) / len(mol_fragment_set)
-
+    
     return frag_sum_weight, fragment_center_of_mass.tolist(), fragment_center_of_mass_2d.tolist()
+
 
 def mol2_frag_graph(mol, atom_graph_data, fragmentation_method):
     if mol is None:
@@ -583,7 +469,7 @@ def mol2_frag_graph(mol, atom_graph_data, fragmentation_method):
     
     data = defaultdict(list)
     mol_fragments, mol_fragment_sets, frag_bond_list = get_mol_fragment_sets(mol, fragmentation_method)
-    #print(f'mol_fragments: {mol_fragments}. mol_fragment_sets: {mol_fragment_sets}. frag_bond_list: {frag_bond_list}')
+
     frag_weights, frag_pos_dist = [], []
     for mol_fragment in mol_fragment_sets:
         frag_feature = get_hyper_node_feature_sum(atom_graph_data, np.array(mol_fragment))
@@ -593,56 +479,26 @@ def mol2_frag_graph(mol, atom_graph_data, fragmentation_method):
         data['frag_coor_2d'].append(frag_pos_2d)
         frag_weights.append(frag_weight)
     
-    #print(f'frag_features: {data["frag_features"]} \n frag_coor: {data["frag_coor"]}')
-    #get center of mass
     center_of_mass = np.sum(np.array(data['frag_coor']) * np.array(frag_weights).reshape(-1,1), axis=0) / np.sum(frag_weights)
-    #print(f'frag weights: {frag_weights} \ncenter_of_mass: {center_of_mass}')
 
     distance = pairwise_distances(data['frag_coor_2d'])
 
-
-## in the format of adjacency matrix -> change to index format
     adjacency_matrix = atom_graph_data.edge_index
-    #edge_indices = torch.nonzero(adjacency_matrix, as_tuple=True)
     edge_indices = torch.nonzero(torch.triu(adjacency_matrix, diagonal=1), as_tuple=True)
     edge_index = torch.stack(edge_indices, dim=0)
     edge_index = edge_index[:, edge_index[0] != edge_index[1]]
     edge_index = edge_index.t()
-#    edge_index -= 1
-
-    frag_edge_attr_idx = []
-    for _ in frag_bond_list:
-        #print(f'fragment: {frag_bond_list}\tedge_index: {edge_index}')
-        for j, edge in enumerate(edge_index):
-            if (edge == torch.tensor(_)).all(dim=0):
-        #        print(f'index in edge matrix: {j}')
-                frag_edge_attr_idx.append(j)
-    #print(f'frag_edge_attr_idx: {frag_edge_attr_idx}')
-
     
     if len(frag_bond_list) != 0:
         frag_edges = get_frag_edges(mol_fragment_sets, frag_bond_list)
-        data['frag_edges'] = frag_edges
-        data['frag_edge_attr'] = atom_graph_data.edge_attr[frag_edge_attr_idx]
     else:
         data['frag_edges'] = np.zeros((0, 2), dtype=np.int64)
         
-    # get atom's hyper node idx
-    num_atoms = mol.GetNumAtoms()
-    atom_hyper_node_idx = [-1 for i in range(num_atoms)]
-    for i, mol_fragment in enumerate(mol_fragment_sets):
-        for atom_idx in mol_fragment:
-            atom_hyper_node_idx[atom_idx] = i
-    
-#    if isinstance(data['frag_edge_attr'], list):       
-#        print(f'Error:{mol_fragment_sets}')
         
     data['frag_features'] = torch.tensor(data['frag_features'], dtype=torch.float32)
-    data['frag_edges'] = torch.tensor(data['frag_edges'], dtype=torch.int64)
-#    data['frag_edge_attr'] = torch.tensor(data['frag_edge_attr'], dtype=torch.int64)
+    data['frag_edges'] = torch.tensor(frag_edges, dtype=torch.int64)
     data['frag_dist'] = torch.tensor(distance, dtype=torch.float32)
     data['frag_pos'] = torch.tensor(data['frag_coor'], dtype=torch.float32)
-    data['atom_hyper_node_idx'] = torch.tensor(atom_hyper_node_idx, dtype=torch.int64)
     data['num_frags'] = torch.tensor(len(mol_fragment_sets), dtype=torch.int64)
     data['frag_center_of_mass'] = torch.tensor(center_of_mass, dtype=torch.float32)
     return data
